@@ -1,4 +1,6 @@
 import kotlin.math.cos
+import kotlin.math.exp
+import kotlin.math.log
 import kotlin.math.sin
 
 val ZERO = Value(0.0)
@@ -27,6 +29,7 @@ data class Plus(val x: Expr, val y: Expr) : Expr() {
     return if (x == ZERO && y == ZERO) ZERO
     else if (x == ZERO) y
     else if (y == ZERO) x
+    else if (x is Value && y is Value) Value(x.value + y.value)
     else Plus(x, y)
   }
 
@@ -39,8 +42,9 @@ data class Minus(val x: Expr, val y: Expr) : Expr() {
   override fun simplify(): Expr {
     val x = x.simplify()
     val y = y.simplify()
-    if (y.simplify() == ZERO) return x.simplify()
-    return Minus(x, y)
+    return if (y.simplify() == ZERO) x.simplify()
+    else if (x is Value && y is Value) Value(x.value - y.value)
+    else Minus(x, y)
   }
 
   override fun toString(): String {
@@ -55,6 +59,7 @@ data class Multiply(val x: Expr, val y: Expr) : Expr() {
     return if (x == ZERO || y == ZERO) ZERO
     else if (x == ONE) y
     else if (y == ONE) x
+    else if (x is Value && y is Value) Value(x.value * y.value)
     else Multiply(x, y)
   }
 
@@ -70,6 +75,7 @@ data class Divide(val x: Expr, val y: Expr) : Expr() {
     return when {
       x == ZERO -> ZERO
       y == ONE -> x
+      x is Value && y is Value -> Value(x.value / y.value)
       else -> Divide(x, y)
     }
   }
@@ -81,7 +87,9 @@ data class Divide(val x: Expr, val y: Expr) : Expr() {
 
 data class Sin(val expr: Expr) : Expr() {
   override fun simplify(): Expr {
-    return expr.simplify()
+    val expr = expr.simplify()
+    return if (expr is Value) Value(sin(expr.value))
+    else Sin(expr)
   }
 
   override fun toString(): String {
@@ -91,11 +99,37 @@ data class Sin(val expr: Expr) : Expr() {
 
 data class Cos(val expr: Expr) : Expr() {
   override fun simplify(): Expr {
-    return expr.simplify()
+    val expr = expr.simplify()
+    return if (expr is Value) Value(cos(expr.value))
+    else Cos(expr)
   }
 
   override fun toString(): String {
     return "cos($expr)"
+  }
+}
+
+data class Exp(val expr: Expr) : Expr() {
+  override fun simplify(): Expr {
+    val expr = expr.simplify()
+    return if (expr is Value) Value(exp(expr.value))
+    else Exp(expr)
+  }
+
+  override fun toString(): String {
+    return "exp($expr)"
+  }
+}
+
+data class Log(val expr: Expr) : Expr() {
+  override fun simplify(): Expr {
+    val expr = expr.simplify()
+    return if (expr is Value) Value(log(expr.value, Math.E))
+    else Log(expr)
+  }
+
+  override fun toString(): String {
+    return "log($expr)"
   }
 }
 
@@ -109,6 +143,8 @@ fun eval(expr: Expr, env: Map<Variable, Value>): Double {
     is Minus -> eval(expr.x, env) - eval(expr.y, env)
     is Multiply -> eval(expr.x, env) * eval(expr.y, env)
     is Divide -> eval(expr.x, env) / eval(expr.y, env)
+    is Exp -> exp(eval(expr.expr, env))
+    is Log -> log(eval(expr.expr, env), Math.E)
   }
 }
 
@@ -129,22 +165,43 @@ fun diff(expr: Expr, variable: Variable): Expr {
       return Minus(ll, rr).simplify()
     }
     is Multiply -> {
-      if (expr.x is Value) return Multiply(expr.x, diff(expr.y, variable)).simplify()
-      if (expr.y is Value) return Multiply(expr.y, diff(expr.x, variable)).simplify()
+      val x = expr.x.simplify()
+      val y = expr.x.simplify()
+      if (x is Value) return Multiply(x, diff(y, variable)).simplify()
+      if (y is Value) return Multiply(y, diff(x, variable)).simplify()
 
-      val ll = diff(expr.x, variable)
-      val rr = diff(expr.y, variable)
-      return Plus(Multiply(ll, expr.y), Multiply(rr, expr.x)).simplify()
+      val ll = diff(x, variable)
+      val rr = diff(y, variable)
+      return Plus(Multiply(ll, y), Multiply(rr, x)).simplify()
     }
     is Divide -> {
+      val y = expr.y.simplify()
+      if (y is Value) return Divide(diff(expr.x, variable), y).simplify()
+
       val ll = diff(expr.x, variable)
-      val rr = diff(expr.y, variable)
-      return Divide(Minus(Multiply(ll, expr.y), Multiply(rr, expr.x)), Multiply(expr.y, expr.y)).simplify()
+      val rr = diff(y, variable)
+      return Divide(Minus(Multiply(ll, y), Multiply(rr, expr.x)), Multiply(y, y)).simplify()
+    }
+    is Exp -> {
+      return Multiply(diff(expr.expr, variable), expr).simplify()
+    }
+    is Log -> {
+      return Divide(ONE, expr.expr).simplify()
     }
   }
 }
 
-fun main(args: Array<String>) {
-  println(diff(Multiply(Variable("x"), Variable("y")), Variable("x")))
-  println(diff(Divide(Variable("x"), Variable("y")), Variable("x")))
+fun main() {
+  val testData = listOf(
+    Multiply(Variable("x"), Variable("y")),
+    Divide(Variable("x"), Variable("y")),
+    Exp(Multiply(Variable("x"), Variable("y"))),
+    Log(Multiply(Variable("x"), Divide(Variable("y"), Value(2.0)))),
+    Multiply(Multiply(Value(3.0), Variable("y")), Variable("x")),
+    Multiply(Multiply(ONE, Value(3.0)), Log(Multiply(Variable("x"), Divide(Variable("y"), Value(2.0))))),
+    Divide(Variable("x"), Log(Multiply(Value(3.0), Value(5.0))))
+  )
+  testData.forEach {
+    println("$it'(x) = ${diff(it, Variable("x"))}")
+  }
 }
