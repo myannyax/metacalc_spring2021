@@ -152,8 +152,12 @@ fun diff(expr: Expr, variable: Variable): Expr {
   return when (expr) {
     is Value -> ZERO
     is Variable -> if (expr == variable) return ONE else ZERO
-    is Sin -> return Cos(expr)
-    is Cos -> return Multiply(Value(-1.0), Sin(expr))
+    is Sin -> return Multiply(diff(expr.expr, variable), Cos(expr.expr)).simplify()
+    is Cos -> {
+      val exprExprDiff = diff(expr.expr, variable)
+      return if (exprExprDiff is Value) Multiply(Value(exprExprDiff.value * -1.0), Sin(expr.expr)).simplify()
+      else Multiply(exprExprDiff, Multiply(Value(-1.0), Sin(expr.expr))).simplify()
+    }
     is Plus -> {
       val ll = diff(expr.x, variable)
       val rr = diff(expr.y, variable)
@@ -166,7 +170,7 @@ fun diff(expr: Expr, variable: Variable): Expr {
     }
     is Multiply -> {
       val x = expr.x.simplify()
-      val y = expr.x.simplify()
+      val y = expr.y.simplify()
       if (x is Value) return Multiply(x, diff(y, variable)).simplify()
       if (y is Value) return Multiply(y, diff(x, variable)).simplify()
 
@@ -186,7 +190,7 @@ fun diff(expr: Expr, variable: Variable): Expr {
       return Multiply(diff(expr.expr, variable), expr).simplify()
     }
     is Log -> {
-      return Divide(ONE, expr.expr).simplify()
+      return Multiply(diff(expr.expr, variable), Divide(ONE, expr.expr)).simplify()
     }
   }
 }
@@ -199,7 +203,8 @@ fun main() {
     Log(Multiply(Variable("x"), Divide(Variable("y"), Value(2.0)))),
     Multiply(Multiply(Value(3.0), Variable("y")), Variable("x")),
     Multiply(Multiply(ONE, Value(3.0)), Log(Multiply(Variable("x"), Divide(Variable("y"), Value(2.0))))),
-    Divide(Variable("x"), Log(Multiply(Value(3.0), Value(5.0))))
+    Divide(Variable("x"), Log(Multiply(Value(3.0), Value(5.0)))),
+    Cos(Multiply(Value(2.0), Variable("x")))
   )
   testData.forEach {
     println("$it'(x) = ${diff(it, Variable("x"))}")
